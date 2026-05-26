@@ -1,0 +1,55 @@
+[project]
+name = "speak-sign-to-text"
+version = "1.0.0"
+description = "Offline Android Flet app for speech to text with local history and Bluetooth output."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Speak & Sign Team", email = "you@example.com" }
+]
+dependencies = [
+    "flet==0.85.1",
+    "faster-whisper>=1.2.1,<2.0",
+    "vosk>=0.3.45",
+    "sounddevice>=0.5.1",
+    "scikit-learn>=1.5.0",
+    "scipy>=1.14.0",
+    "plyer>=2.1.0",
+    "pyttsx3>=2.90",
+    "pyjnius>=1.7.0; platform_system != 'Windows'",
+    "numpy>=2.0.0",
+    "python-dotenv>=1.2.2",
+    "pyjnius>=1.7.0",
+]
+
+[dependency-groups]
+dev = [
+    "flet-cli==0.85.1",
+    "flet-desktop==0.85.1",
+    "flet-web==0.85.1",
+]
+
+[tool.flet]
+org = "com.speaksign"
+product = "Speak & Sign to Text"
+company = "Speak & Sign"
+copyright = "Copyright (C) 2026 Speak & Sign"
+
+[tool.flet.app]
+path = "speak_sign_app"
+
+[tool.flet.android]
+min_sdk_version = 24
+target_sdk_version = 35
+adaptive_icon_background = "#2563EB"
+
+[tool.flet.android.permission]
+"android.permission.RECORD_AUDIO" = true
+"android.permission.BLUETOOTH" = true
+"android.permission.BLUETOOTH_ADMIN" = true
+"android.permission.BLUETOOTH_SCAN" = true
+"android.permission.BLUETOOTH_CONNECT" = true
+"android.permission.ACCESS_FINE_LOCATION" = true
+
+[tool.flet.android.feature]
+"android.hardware.bluetooth" = false
