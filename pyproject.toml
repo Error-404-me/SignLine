@@ -40,7 +40,8 @@ company = "SignLine"
 copyright = "Copyright (C) 2026 Speak & Sign"
 
 [tool.flet.app]
-path = "speak_sign_app"
+path = "."
+module = "main.py"
 
 [tool.flet.splash]
 android = false
@@ -61,3 +62,9 @@ adaptive_icon_background = "#2563EB"
 
 [tool.flet.android.feature]
 "android.hardware.bluetooth" = false
+
+[tool.setuptools]
+py-modules = ["main", "app_bar", "app_state", "components"]
+
+[tool.setuptools.packages.find]
+include = ["services*", "tabs*"]
