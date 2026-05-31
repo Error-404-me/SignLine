@@ -14,7 +14,7 @@ authors = [
 dependencies = [
     "flet==0.85.1",
     "faster-whisper>=1.2.1,<2.0",
-    "vosk>=0.3.45",
+    "vosk>=0.3.45 ; platform_system == 'Windows' or platform_system == 'Darwin'",
     "sounddevice >= 0.5.1 ; platform_system != 'Linux' and platform_system != 'Android'",
     "scikit-learn >= 1.5.0 ; platform_system == 'Windows' or platform_system == 'Darwin'",
     "plyer>=2.1.0",
