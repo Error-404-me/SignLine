@@ -49,8 +49,6 @@ ios = false
 min_sdk_version = 24
 target_sdk_version = 35
 adaptive_icon_background = "#2563EB"
-
-[tool.flet.android]
 permissions = [
     "android.permission.RECORD_AUDIO",
     "android.permission.BLUETOOTH",
