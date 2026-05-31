@@ -15,15 +15,14 @@ dependencies = [
     "flet==0.85.1",
     "faster-whisper>=1.2.1,<2.0",
     "vosk>=0.3.45",
-    "sounddevice>=0.5.1",
+    "sounddevice >= 0.5.1 ; platform_system != 'Linux' and platform_system != 'Android'",
     "scikit-learn>=1.5.0",
     "scipy>=1.14.0",
     "plyer>=2.1.0",
     "pyttsx3>=2.90",
-    "pyjnius>=1.7.0; platform_system != 'Windows'",
     "numpy>=2.0.0",
     "python-dotenv>=1.2.2",
-    "pyjnius>=1.7.0",
+    "pyjnius>=1.6.1",
 ]
 
 [dependency-groups]
