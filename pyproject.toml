@@ -64,7 +64,7 @@ adaptive_icon_background = "#2563EB"
 "android.hardware.bluetooth" = false
 
 [tool.setuptools]
-py-modules = ["main", "app_bar", "app_state", "components"]
+py-modules = ["main", "app_bar", "app_state", "components", "theme", "splash_screen"]
 
 [tool.setuptools.packages.find]
 include = ["services*", "tabs*"]
