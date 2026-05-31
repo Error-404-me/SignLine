@@ -3,7 +3,7 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "speak-sign-to-text"
+name = "SignLine"
 version = "1.0.0"
 description = "Offline Android Flet app for speech to text with local history and Bluetooth output."
 readme = "README.md"
@@ -32,10 +32,10 @@ dev = [
 ]
 
 [tool.flet]
-org = "com.speaksign"
-product = "Speak to text & Text to speech"
+org = "com.signline"
+product = "SignLine"
 company = "SignLine"
-copyright = "Copyright (C) 2026 Speak & Sign"
+copyright = "Copyright (C) 2026 SignLine"
 
 [tool.flet.app]
 path = "."
