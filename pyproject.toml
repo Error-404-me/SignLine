@@ -58,9 +58,6 @@ adaptive_icon_background = "#2563EB"
 "android.permission.BLUETOOTH_CONNECT" = true
 "android.permission.ACCESS_FINE_LOCATION" = true
 
-[tool.flet.android.feature]
-"android.hardware.bluetooth" = false
-
 [tool.setuptools]
 py-modules = ["main", "app_bar", "app_state", "components", "theme", "splash_screen"]
 
