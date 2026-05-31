@@ -9,6 +9,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      PYTHON_VERSION: "3.12"
+      FLUTTER_VERSION: "3.41.4"
+      FLET_CLI_NO_RICH_OUTPUT: "1"
 
     steps:
       - name: Checkout code
@@ -17,7 +24,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
         run: pip install uv
@@ -65,7 +72,9 @@ jobs:
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.24.0"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -77,16 +86,11 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Build APK
-        run: |
-          cd speak_sign_app
-          flet build apk \
-            --project "SignLine" \
-            --org "com.kylearaneta.signline" \
-            --build-number ${{ github.run_number }}
+        run: flet build apk --yes --verbose
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: signline-apk-${{ github.run_number }}
-          path: speak_sign_app/build/apk/
-          retention-days: 30
+          path: build/apk/*.apk
+          if-no-files-found: error
