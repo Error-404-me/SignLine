@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "speak-sign-to-text"
 version = "1.0.0"
@@ -31,12 +35,16 @@ dev = [
 
 [tool.flet]
 org = "com.speaksign"
-product = "Speak & Sign to Text"
-company = "Speak & Sign"
+product = "Speak to text & Text to speech"
+company = "SignLine"
 copyright = "Copyright (C) 2026 Speak & Sign"
 
 [tool.flet.app]
 path = "speak_sign_app"
+
+[tool.flet.splash]
+android = false
+ios = false
 
 [tool.flet.android]
 min_sdk_version = 24
