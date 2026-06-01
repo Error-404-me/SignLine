@@ -11,6 +11,7 @@ from queue import Empty, Queue
 import socket
 import threading
 from typing import Any
+from flet_permission_handler import PermissionHandler, PermissionStatus, Permission
 
 from services.glove_parser import GloveParser, GloveReading
 
@@ -121,8 +122,24 @@ class BluetoothManager:
 
         self.mode = mode
 
+    def request_android_permissions(self):
+        ph = PermissionHandler()
+    
+        permissions = [
+            Permission.BLUETOOTH_SCAN,
+            Permission.BLUETOOTH_CONNECT,
+            Permission.BLUETOOTH_ADVERTISE,
+        ]
+    
+        for permission in permissions:
+            status = ph.check_permission_status(permission)
+    
+            if status != PermissionStatus.GRANTED:
+                ph.request_permission(permission)
+
     def scan_devices(self) -> list[BluetoothDeviceInfo]:
         """Start discovery and return paired devices or the TCP simulator fallback."""
+        self.request_android_permissions()
 
         devices: list[BluetoothDeviceInfo] = []
         if self.android and self._adapter is not None:
