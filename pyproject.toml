@@ -64,7 +64,7 @@ permissions = [
 ]
 
 [tool.setuptools]
-py-modules = ["main", "app_bar", "app_state", "components", "theme", "splash_screen"]
+py-modules = ["main", "app_bar", "app_state", "components", "theme", "splash_screen", "ui_permissions"]
 
 [tool.setuptools.packages.find]
 include = ["services*", "tabs*"]
