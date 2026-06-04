@@ -34,40 +34,40 @@ jobs:
         run: uv sync
 
       # ── Download models ──────────────────────────────────────────
-      - name: Download Whisper models
-        run: |
-          gh release download whisper-models \
-            --pattern "*.zip" \
-            --dir speak_sign_app/assets/models/
+      # - name: Download Whisper models
+      #   run: |
+      #     gh release download whisper-models \
+      #       --pattern "*.zip" \
+      #       --dir speak_sign_app/assets/models/
 
-          unzip -o speak_sign_app/assets/models/base.zip \
-            -d speak_sign_app/assets/models/
-          unzip -o speak_sign_app/assets/models/tiny.zip \
-            -d speak_sign_app/assets/models/
+      #     unzip -o speak_sign_app/assets/models/base.zip \
+      #       -d speak_sign_app/assets/models/
+      #     unzip -o speak_sign_app/assets/models/tiny.zip \
+      #       -d speak_sign_app/assets/models/
 
-          rm speak_sign_app/assets/models/*.zip
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     rm speak_sign_app/assets/models/*.zip
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download Vosk model
-        run: |
-          gh release download vosk-model \
-            --pattern "vosk.zip" \
-            --dir speak_sign_app/assets/models/
+      # - name: Download Vosk model
+      #   run: |
+      #     gh release download vosk-model \
+      #       --pattern "vosk.zip" \
+      #       --dir speak_sign_app/assets/models/
 
-          unzip -o speak_sign_app/assets/models/vosk.zip \
-            -d speak_sign_app/assets/models/
+      #     unzip -o speak_sign_app/assets/models/vosk.zip \
+      #       -d speak_sign_app/assets/models/
 
-          rm speak_sign_app/assets/models/vosk.zip
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     rm speak_sign_app/assets/models/vosk.zip
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify models
-        run: |
-          echo "=== Model files ==="
-          find speak_sign_app/assets/models/ -type f | sort
-          echo "=== Sizes ==="
-          du -sh speak_sign_app/assets/models/*/
+      # - name: Verify models
+      #   run: |
+      #     echo "=== Model files ==="
+      #     find speak_sign_app/assets/models/ -type f | sort
+      #     echo "=== Sizes ==="
+      #     du -sh speak_sign_app/assets/models/*/
 
       # ── Build APK ────────────────────────────────────────────────
       - name: Install Flutter
