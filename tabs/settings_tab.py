@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 
 import flet as ft
+from flet_permission_handler import PermissionHandler
 
 from app_state import AppState
 from components import build_badge, build_section_title, show_snack
@@ -22,6 +23,7 @@ from theme import (
     TEXT_PRIMARY,
     border_all,
 )
+from ui_permissions import ensure_bluetooth_permissions
 
 
 class SettingsTab:
@@ -32,6 +34,8 @@ class SettingsTab:
 
         self.page = page
         self.state = state
+        self.permission_handler = PermissionHandler()
+        self._register_permission_handler()
         self.speech_engine_dropdown = ft.Dropdown(
             label="Speech engine",
             value=self.state.settings.speech_engine,
@@ -111,11 +115,17 @@ class SettingsTab:
             expand=True,
             on_change=self._mic_gain_changed,
         )
-        self.highpass_switch = ft.Switch(
-            label="Remove low-frequency rumble",
-            value=self.state.settings.highpass_enabled,
-            active_color=PRIMARY_BLUE,
-            on_change=self._highpass_enabled_changed,
+        self.highpass_switch = ft.Row(
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Text(value="Remove low-frequency rumble"),
+                ft.Switch(
+                    value=self.state.settings.highpass_enabled,
+                    active_color=PRIMARY_BLUE,
+                    on_change=self._highpass_enabled_changed,
+                ),
+            ]
         )
         self.highpass_cutoff_value = ft.Text(
             f"{self.state.settings.highpass_cutoff_hz:.0f} Hz",
@@ -132,11 +142,16 @@ class SettingsTab:
             disabled=not self.state.settings.highpass_enabled,
             on_change=self._highpass_cutoff_changed,
         )
-        self.denoise_switch = ft.Switch(
-            label="Spectral noise reduction",
-            value=self.state.settings.denoise_enabled,
-            active_color=PRIMARY_BLUE,
-            on_change=self._denoise_enabled_changed,
+        self.denoise_switch = ft.Row(
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            controls=[
+                ft.Text(value="Spectral noise reduction"),
+                ft.Switch(
+                    value=self.state.settings.denoise_enabled,
+                    active_color=PRIMARY_BLUE,
+                    on_change=self._denoise_enabled_changed,
+                ),
+            ]
         )
         self.denoise_strength_value = ft.Text(
             f"{self.state.settings.denoise_prop_decrease:.0%}",
@@ -153,12 +168,17 @@ class SettingsTab:
             disabled=not self.state.settings.denoise_enabled,
             on_change=self._denoise_strength_changed,
         )
-        self.denoise_stationary_switch = ft.Switch(
-            label="Stationary noise (fan, AC hum)",
-            value=self.state.settings.denoise_stationary,
-            active_color=PRIMARY_BLUE,
-            disabled=not self.state.settings.denoise_enabled,
-            on_change=self._denoise_stationary_changed,
+        self.denoise_stationary_switch = ft.Row(
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            controls=[
+                ft.Text(value="Stationary noise (fan, AC hum)"),
+                ft.Switch(
+                    value=self.state.settings.denoise_stationary,
+                    active_color=PRIMARY_BLUE,
+                    disabled=not self.state.settings.denoise_enabled,
+                    on_change=self._denoise_stationary_changed,
+                ),
+            ]
         )
         self.no_speech_threshold_value = ft.Text(
             f"{self.state.settings.no_speech_threshold:.2f}",
@@ -223,6 +243,14 @@ class SettingsTab:
         self._view = self._build_view()
         self.refresh_bluetooth_status()
         self._refresh_model_notes()
+
+    def _register_permission_handler(self) -> None:
+        """Register the shared permission handler service with the page."""
+
+        try:
+            self.page.register_service(self.permission_handler)
+        except Exception:
+            pass
 
     def build(self) -> ft.Control:
         """Return the settings root control."""
@@ -316,15 +344,15 @@ class SettingsTab:
             controls_padding=12,
             expanded_cross_axis_alignment=ft.CrossAxisAlignment.STRETCH,
             controls=[
-                self._slider_row("Mic Gain", self.mic_gain_slider, self.mic_gain_value),
+                self._slider_column(label="Mic Gain", slider=self.mic_gain_slider, value_text=self.mic_gain_value),
                 self.highpass_switch,
-                self._slider_row(
+                self._slider_column(
                     "High-pass Cutoff",
                     self.highpass_cutoff_slider,
                     self.highpass_cutoff_value,
                 ),
                 self.denoise_switch,
-                self._slider_row(
+                self._slider_column(
                     "Noise Reduction Strength",
                     self.denoise_strength_slider,
                     self.denoise_strength_value,
@@ -343,17 +371,17 @@ class SettingsTab:
             controls_padding=12,
             expanded_cross_axis_alignment=ft.CrossAxisAlignment.STRETCH,
             controls=[
-                self._slider_row(
+                self._slider_column(
                     "No-speech Threshold",
                     self.no_speech_threshold_slider,
                     self.no_speech_threshold_value,
                 ),
-                self._slider_row(
+                self._slider_column(
                     "VAD Silence Duration",
                     self.vad_silence_slider,
                     self.vad_silence_value,
                 ),
-                self._slider_row(
+                self._slider_column(
                     "VAD Sensitivity",
                     self.vad_threshold_slider,
                     self.vad_threshold_value,
@@ -361,7 +389,7 @@ class SettingsTab:
             ],
         )
 
-    def _slider_row(
+    def _slider_column(
         self,
         label: str,
         slider: ft.Slider,
@@ -369,12 +397,19 @@ class SettingsTab:
     ) -> ft.Row:
         """Build one settings slider row."""
 
-        return ft.Row(
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        return ft.Column(
+            spacing=0,
+            margin=ft.Margin.only(bottom=12),
             controls=[
-                ft.Text(label, width=160, color=TEXT_PRIMARY),
+                ft.Row(
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=[
+                        ft.Text(label, width=160, color=TEXT_PRIMARY),
+                        value_text,
+                    ]
+                ),
                 slider,
-                value_text,
             ],
         )
 
@@ -610,7 +645,15 @@ class SettingsTab:
             self.speech_quality_note.color = TEXT_MUTED
 
     def _scan_clicked(self, _: ft.ControlEvent) -> None:
-        """Scan for paired Bluetooth devices without blocking the UI."""
+        """Start the async permission gate before scanning devices."""
+
+        self.page.run_task(self._scan_after_permissions)
+
+    async def _scan_after_permissions(self) -> None:
+        """Request Bluetooth permissions on the UI task, then scan in a worker."""
+
+        if not await ensure_bluetooth_permissions(self.page, self.permission_handler):
+            return
 
         self.scan_button.disabled = True
         self.scan_button.content = ft.Text("Scanning...", weight=ft.FontWeight.W_700)
@@ -671,7 +714,15 @@ class SettingsTab:
         )
 
     def _connect_clicked(self, device: BluetoothDeviceInfo) -> None:
-        """Connect to a selected Bluetooth device in the background."""
+        """Start the async permission gate before connecting."""
+
+        self.page.run_task(self._connect_after_permissions, device)
+
+    async def _connect_after_permissions(self, device: BluetoothDeviceInfo) -> None:
+        """Request Bluetooth permissions on the UI task, then connect in a worker."""
+
+        if not await ensure_bluetooth_permissions(self.page, self.permission_handler):
+            return
 
         show_snack(self.page, f"Connecting to {device.name}...", bgcolor=PRIMARY_BLUE)
 
