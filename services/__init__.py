@@ -6,6 +6,7 @@ __all__ = [
     "bluetooth_service",
     "db_service",
     "glove_parser",
+    "speech_engine",
     "train_glove",
     "tts_service",
 ]
