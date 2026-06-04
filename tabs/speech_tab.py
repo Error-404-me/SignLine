@@ -1,23 +1,17 @@
-"""Speech-to-text tab for offline Vosk or faster-whisper recognition."""
+"""Speech-to-text tab using the platform speech engine."""
 
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
 from queue import Empty, Queue
-import threading
 import time
 
 import flet as ft
 
 from app_state import AppState
 from components import build_output_card, copy_text, show_snack
-from services.asr_service import ASRConfig, ASRService
-from services.mic_capture import MicCapture, make_capture
-from services.vosk_asr_service import (
-    VoskASRConfig,
-    VoskASRService,
-)
+from services.speech_engine import SpeechEngine, make_speech_engine
 from theme import (
     BORDER,
     CARD_RADIUS,
@@ -44,17 +38,12 @@ class SpeechTab:
         self.page = page
         self.state = state
         self._events: Queue[ASRUiEvent] = Queue()
-        self._audio_chunks: Queue[bytes | None] = Queue()
-        self._service: ASRService | VoskASRService | None = None
-        self._recorded_chunks: list[bytes] = []
-        self._capture: MicCapture | None = None
-        self._worker_thread: threading.Thread | None = None
+        self._engine: SpeechEngine = make_speech_engine(page, state, self._events.put)
         self._worker_active = False
         self._listening = False
         self._consumer_running = False
         self._animation_running = False
         self._started_at = 0.0
-        self._audio_chunks_received = 0
         self._output_lines: list[str] = []
         self._last_result_text = ""
         self._last_result_at = 0.0
@@ -132,11 +121,9 @@ class SpeechTab:
         self.stop()
 
     def submit_audio_chunk(self, audio_bytes: bytes) -> None:
-        """Receive WAV or PCM bytes from the UI audio-capture layer."""
+        """Receive WAV or PCM bytes from legacy capture integrations."""
 
-        if not self._listening:
-            return
-        self._audio_chunks.put(audio_bytes)
+        return None
 
     def stop(self) -> None:
         """Request the speech worker to stop after flushing buffered audio."""
@@ -144,10 +131,7 @@ class SpeechTab:
         if self._listening:
             self._listening = False
             self.status_text.value = "Stopping..."
-            if self._capture:
-                self._capture.stop()
-                self._capture = None
-            self._audio_chunks.put(None)
+            self._engine.stop()
             self.page.update()
 
     def _build_view(self) -> ft.Control:
@@ -236,14 +220,10 @@ class SpeechTab:
     def _start_listening(self) -> None:
         """Start recording audio chunks for transcription on Stop."""
 
-        self._service = None
-        self._recorded_chunks = []
-        worker_name = f"{self.state.settings.speech_engine}-asr-recording"
         self._events = Queue()
-        self._audio_chunks = Queue()
+        self._engine = make_speech_engine(self.page, self.state, self._events.put)
         self._listening = True
         self._worker_active = True
-        self._audio_chunks_received = 0
         self._started_at = time.monotonic()
         self.status_text.value = "Recording..."
         self.timer_text.value = "00:00"
@@ -254,32 +234,12 @@ class SpeechTab:
         self.toggle_button.icon = ft.Icons.STOP
         self.toggle_button.bgcolor = "#1D4ED8"
         self.toggle_button.disabled = False
-        self._worker_thread = threading.Thread(
-            target=self._run_audio_worker,
-            name=worker_name,
-            daemon=True,
-        )
-        self._worker_thread.start()
-        try:
-            self._capture = make_capture(self.page)
-            self._capture.start(self.submit_audio_chunk)
-        except Exception as exc:
-            self._capture = None
-            self._events.put(("error", f"Microphone capture failed: {exc}"))
-            self._audio_chunks.put(None)
+        self._engine.start(self.state.settings.speech_language)
         if not self._consumer_running:
             self.page.run_task(self._consume_events)
-        self.page.run_task(self._watch_for_audio_input)
         if not self._animation_running:
             self.page.run_task(self._animate_listening)
         self.page.update()
-
-    async def _watch_for_audio_input(self) -> None:
-        """Show a clear status if no UI capture layer sends audio chunks."""
-
-        await asyncio.sleep(2.5)
-        if self._listening and self._audio_chunks_received == 0:
-            self._events.put(("status", "no_input"))
 
     async def _pick_and_transcribe_audio(self) -> None:
         """Pick a WAV file and transcribe it with the same byte-only ASR API."""
@@ -306,8 +266,7 @@ class SpeechTab:
         self.status_text.value = "Transcribing..."
         self.page.update()
         try:
-            service = self._service or self._build_current_asr_service()
-            result = await asyncio.to_thread(service.transcribe_bytes, audio_bytes)
+            result = await asyncio.to_thread(self._engine.transcribe_bytes, audio_bytes)
             text = str(result.get("text", "")).strip()
             if text:
                 self._append_result(text)
@@ -322,94 +281,6 @@ class SpeechTab:
         finally:
             self.file_button.disabled = False
             self.page.update()
-
-    def _build_asr_service(self) -> ASRService:
-        """Create a faster-whisper service from current settings."""
-
-        config = ASRConfig(
-            model_size_or_path=self.state.settings.whisper_model_name_or_path(
-                self.state.assets_dir
-            ),
-            language=self.state.settings.speech_language,
-            initial_prompt=self._language_prompt(),
-            compute_type="int8",
-            beam_size=1,
-            vad_filter=True,
-            mic_gain=self.state.settings.mic_gain,
-            denoise_enabled=self.state.settings.denoise_enabled,
-            highpass_enabled=self.state.settings.highpass_enabled,
-            highpass_cutoff_hz=self.state.settings.highpass_cutoff_hz,
-            denoise_prop_decrease=self.state.settings.denoise_prop_decrease,
-            denoise_stationary=self.state.settings.denoise_stationary,
-            no_speech_threshold=self.state.settings.no_speech_threshold,
-            vad_silence_ms=self.state.settings.vad_silence_ms,
-            vad_threshold=self.state.settings.vad_threshold,
-        )
-        return ASRService(config)
-
-    def _build_vosk_service(self) -> VoskASRService:
-        """Create a Vosk service from current settings."""
-
-        config = VoskASRConfig(
-            model_path=self.state.settings.vosk_model_path(self.state.assets_dir),
-            language=self.state.settings.speech_language,
-            sample_rate=16_000,
-            return_partials=False,
-        )
-        return VoskASRService(config)
-
-    def _build_current_asr_service(self) -> ASRService | VoskASRService:
-        """Create the currently selected speech service."""
-
-        if self.state.settings.speech_engine == "vosk":
-            return self._build_vosk_service()
-        return self._build_asr_service()
-
-    def _language_prompt(self) -> str | None:
-        """Return a small language hint for Whisper."""
-
-        if self.state.settings.speech_language == "tl":
-            return (
-                "Transcribe Filipino or Tagalog speech accurately. Keep Filipino "
-                "words such as ako, ikaw, siya, tayo, salamat, mahal, oo, hindi, "
-                "kumusta, nasa, para, akin, sayo, dito, doon, ngayon, bukas."
-            )
-        return "Transcribe clear English speech accurately."
-
-    def _run_audio_worker(self) -> None:
-        """Record chunks, then transcribe the full buffer after Stop."""
-
-        try:
-            while True:
-                audio_bytes = self._audio_chunks.get()
-                if audio_bytes is None:
-                    break
-                self._recorded_chunks.append(audio_bytes)
-                self._audio_chunks_received += 1
-                if self._audio_chunks_received == 1:
-                    self._events.put(("status", "receiving"))
-
-            if self._recorded_chunks:
-                self._events.put(("status", "transcribing"))
-                combined = b"".join(self._recorded_chunks)
-                try:
-                    service = self._build_current_asr_service()
-                    result = service.transcribe_bytes(combined)
-                    text = str(result.get("text", "")).strip()
-                    duration = float(result.get("duration", 0.0))
-                    if text:
-                        self._events.put(("result", text))
-                        self._events.put(("status", f"done:{duration:.1f}"))
-                    else:
-                        self._events.put(("status", "no_speech"))
-                except Exception as exc:
-                    self._events.put(("error", str(exc)))
-        except Exception as exc:
-            self._events.put(("error", f"Speech recognition stopped: {exc}"))
-        finally:
-            self._recorded_chunks.clear()
-            self._events.put(("status", "stopped"))
-            self._worker_active = False
 
     async def _consume_events(self) -> None:
         """Consume ASR worker events on the Flet event loop."""
@@ -492,6 +363,7 @@ class SpeechTab:
                 self.toggle_button.disabled = False
             elif message == "stopped":
                 self._listening = False
+                self._worker_active = False
                 self.status_text.value = "Ready"
                 self.toggle_button.content = ft.Text("Start Listening", weight=ft.FontWeight.W_700)
                 self.toggle_button.icon = ft.Icons.PLAY_ARROW
