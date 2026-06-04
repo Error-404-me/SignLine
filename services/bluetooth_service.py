@@ -11,7 +11,6 @@ from queue import Empty, Queue
 import socket
 import threading
 from typing import Any
-from flet_permission_handler import PermissionHandler, PermissionStatus, Permission
 
 from services.glove_parser import GloveParser, GloveReading
 
@@ -122,24 +121,8 @@ class BluetoothManager:
 
         self.mode = mode
 
-    def request_android_permissions(self):
-        ph = PermissionHandler()
-    
-        permissions = [
-            Permission.BLUETOOTH_SCAN,
-            Permission.BLUETOOTH_CONNECT,
-            Permission.BLUETOOTH_ADVERTISE,
-        ]
-    
-        for permission in permissions:
-            status = ph.check_permission_status(permission)
-    
-            if status != PermissionStatus.GRANTED:
-                ph.request_permission(permission)
-
     def scan_devices(self) -> list[BluetoothDeviceInfo]:
         """Start discovery and return paired devices or the TCP simulator fallback."""
-        self.request_android_permissions()
 
         devices: list[BluetoothDeviceInfo] = []
         if self.android and self._adapter is not None:
@@ -157,6 +140,8 @@ class BluetoothManager:
             except BluetoothError:
                 raise
             except Exception as exc:
+                if _is_android_permission_error(exc):
+                    raise BluetoothError("Bluetooth permissions not granted") from exc
                 raise BluetoothError(f"Bluetooth scan failed: {exc}") from exc
 
         devices.sort(key=lambda item: item.name.lower())
@@ -189,7 +174,7 @@ class BluetoothManager:
                     raise BluetoothError("Bluetooth is disabled. Turn it on in Android settings.")
                 device = self._adapter.getRemoteDevice(address)
                 spp_uuid = UUID.fromString(SPP_UUID)
-                socket_obj = device.createRfcommSocketToServiceRecord(spp_uuid)
+                socket_obj = device.cr9yMnTm4NSzvG9rrwjM2ec8xZgh1cafXH8(spp_uuid)
                 self._adapter.cancelDiscovery()
                 socket_obj.connect()
                 self._socket = socket_obj
@@ -209,6 +194,8 @@ class BluetoothManager:
                 raise
             except Exception as exc:
                 self.disconnect()
+                if _is_android_permission_error(exc):
+                    raise BluetoothError("Bluetooth permissions not granted") from exc
                 raise BluetoothError(f"Could not connect to {address}: {exc}") from exc
 
     def send_text(self, text: str) -> None:
@@ -487,6 +474,17 @@ class BluetoothManager:
         except Exception:
             self._model = None
         return self._model
+
+
+def _is_android_permission_error(exc: Exception) -> bool:
+    """Return True for Android security errors caused by missing Bluetooth grants."""
+
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return (
+        "permission" in text
+        or "securityexception" in text
+        or "requires android.permission.bluetooth" in text
+    )
 
 
 __all__ = [
