@@ -21,7 +21,7 @@ dependencies = [
     "scipy>=1.14.0; platform_system != 'Android'",
     "plyer>=2.1.0",
     "pyttsx3>=2.90; platform_system != 'Android'",
-    "pyjnius>=1.7.0; platform_system != 'Windows'",
+    "pyjnius>=1.6.1; platform_system != 'Windows'",
     "numpy>=2.0.0",
     "python-dotenv>=1.2.2",
     "flet-permission-handler>=0.85.1",
