@@ -4,24 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "SignLine"
-version = "1.0.0"
+version = "1.1.0"
 description = "Offline Android Flet app for speech to text with local history and Bluetooth output."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-    { name = "Speak & Sign Team", email = "you@example.com" }
+    { name = "Speak & Sign Team", email = "pasuquinargie29@gmail.com" }
 ]
 dependencies = [
     "flet==0.85.1",
-    "faster-whisper>=1.2.1,<2.0 ; platform_system == 'Windows' or platform_system == 'Darwin'",
-    "vosk>=0.3.45 ; platform_system == 'Windows' or platform_system == 'Darwin'",
-    "sounddevice >= 0.5.1 ; platform_system != 'Linux' and platform_system != 'Android'",
-    "scikit-learn >= 1.5.0 ; platform_system == 'Windows' or platform_system == 'Darwin'",
+    "faster-whisper>=1.2.1,<2.0; platform_system != 'Android'",
+    "vosk>=0.3.45; platform_system != 'Android'",
+    "sounddevice>=0.5.1; platform_system != 'Android'",
+    "SpeechRecognition>=3.10.0; platform_system != 'Android'",
+    "scikit-learn>=1.5.0; platform_system != 'Android'",
+    "scipy>=1.14.0; platform_system != 'Android'",
     "plyer>=2.1.0",
-    "pyttsx3>=2.90",
+    "pyttsx3>=2.90; platform_system != 'Android'",
+    "pyjnius>=1.7.0; platform_system != 'Windows'",
     "numpy>=2.0.0",
     "python-dotenv>=1.2.2",
-    "pyjnius>=1.6.1",
     "flet-permission-handler>=0.85.1",
 ]
 
@@ -56,6 +58,7 @@ permissions = [
     "android.permission.BLUETOOTH_CONNECT",
     "android.permission.BLUETOOTH_SCAN",
     "android.permission.BLUETOOTH_ADMIN",
+    "android.permission.BLUETOOTH_ADVERTISE",
     "android.permission.INTERNET",
     "android.permission.ACCESS_NETWORK_STATE",
 ]
