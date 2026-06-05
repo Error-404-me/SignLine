@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-import base64
-import inspect
 import platform
 from typing import Callable, Any
 
@@ -83,35 +81,37 @@ class FletMicCapture(MicCapture):
     def __init__(self, page: Any) -> None:
         if page is None:
             raise ValueError("FletMicCapture requires a Flet page.")
-        self.page = page
+        self._page = page
         self._recorder: Any | None = None
+        self._on_chunk: AudioChunkCallback | None = None
 
     def start(self, on_chunk: AudioChunkCallback) -> None:
         """Add a Flet recorder to the page and start PCM streaming."""
 
+        import base64
         import flet as ft
 
-        recorder_class = getattr(ft, "AudioRecorder", None)
-        if recorder_class is None:
+        if getattr(ft, "AudioRecorder", None) is None:
             raise RuntimeError("This Flet build does not provide ft.AudioRecorder.")
 
-        audio_encoder = getattr(getattr(ft, "AudioEncoder", object), "PCM_16BIT", "PCM_16BIT")
-
-        def on_data(event: Any) -> None:
-            encoded = getattr(event, "data", "") or ""
-            if not encoded:
-                return
-            on_chunk(base64.b64decode(encoded))
-
-        self._recorder = recorder_class(
-            audio_encoder=audio_encoder,
+        self._on_chunk = on_chunk
+        self._recorder = ft.AudioRecorder(
+            audio_encoder=ft.AudioEncoder.PCM_16BIT,
             sample_rate=16_000,
             num_channels=1,
-            on_data=on_data,
+            on_data=self._handle_data,
         )
-        self.page.overlay.append(self._recorder)
-        self.page.update()
-        _call_maybe_async(self._recorder.start_recording, self.page)
+        self._page.overlay.append(self._recorder)
+        self._page.update()
+        self._recorder.start_recording()
+
+    def _handle_data(self, event: Any) -> None:
+        """Decode base64 PCM chunks from Flet AudioRecorder."""
+
+        if self._on_chunk and getattr(event, "data", None):
+            import base64
+
+            self._on_chunk(base64.b64decode(event.data))
 
     def stop(self) -> None:
         """Stop recording and remove the recorder from page overlay."""
@@ -119,29 +119,27 @@ class FletMicCapture(MicCapture):
         if self._recorder is None:
             return
         try:
-            _call_maybe_async(self._recorder.stop_recording, self.page)
+            self._recorder.stop_recording()
         finally:
-            if self._recorder in self.page.overlay:
-                self.page.overlay.remove(self._recorder)
-                self.page.update()
+            try:
+                self._page.overlay.remove(self._recorder)
+                self._page.update()
+            except Exception:
+                pass
             self._recorder = None
+            self._on_chunk = None
 
 
 def make_capture(page: Any | None = None) -> MicCapture:
     """Return the microphone capture implementation for the current platform."""
 
+    from services.stt_service import _is_android
+
+    if _is_android():
+        return FletMicCapture(page)
     if platform.system() in {"Windows", "Darwin", "Linux"}:
         return DesktopMicCapture()
     return FletMicCapture(page)
-
-
-def _call_maybe_async(function: Callable[..., Any], page: Any) -> None:
-    result = function()
-    if inspect.isawaitable(result):
-        async def runner() -> None:
-            await result
-
-        page.run_task(runner)
 
 
 __all__ = [
