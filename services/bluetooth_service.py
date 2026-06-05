@@ -51,7 +51,7 @@ class BluetoothDeviceInfo:
     paired: bool = True
 
 
-class BluetoothError(RuntimeError):
+class BluetoothError(Exception):
     """Raised when a Bluetooth or TCP operation fails."""
 
 
