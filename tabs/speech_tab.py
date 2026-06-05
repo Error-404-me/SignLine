@@ -1,17 +1,16 @@
-"""Speech-to-text tab using the platform speech engine."""
+"""Speech-to-text tab backed by platform STT services."""
 
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
-from queue import Empty, Queue
 import time
 
 import flet as ft
+from flet_permission_handler import PermissionHandler
 
 from app_state import AppState
 from components import build_output_card, copy_text, show_snack
-from services.speech_engine import SpeechEngine, make_speech_engine
+from services.stt_service import STTResult, STTService, make_stt_service
 from theme import (
     BORDER,
     CARD_RADIUS,
@@ -26,29 +25,23 @@ from theme import (
 )
 
 
-ASRUiEvent = tuple[str, str]
-
-
 class SpeechTab:
-    """Flet view and controller for live offline speech recognition."""
+    """Flet view and controller for platform speech recognition."""
 
     def __init__(self, page: ft.Page, state: AppState) -> None:
         """Create speech tab controls."""
 
         self.page = page
         self.state = state
-        self._events: Queue[ASRUiEvent] = Queue()
-        self._engine: SpeechEngine = make_speech_engine(page, state, self._events.put)
-        self._worker_active = False
+        self._stt: STTService | None = None
+        self._permission_handler = PermissionHandler()
+        self._register_permission_handler()
         self._listening = False
-        self._consumer_running = False
         self._animation_running = False
         self._started_at = 0.0
         self._output_lines: list[str] = []
         self._last_result_text = ""
         self._last_result_at = 0.0
-        self.file_picker = ft.FilePicker()
-        self._register_file_picker()
 
         self.wave_bars = [
             ft.Container(
@@ -71,7 +64,12 @@ class SpeechTab:
             animate_scale=ft.Animation(550, ft.AnimationCurve.EASE_IN_OUT),
             content=ft.Icon(ft.Icons.MIC, color=PRIMARY_BLUE, size=72),
         )
-        self.status_text = ft.Text("Ready", size=15, weight=ft.FontWeight.W_600, color=TEXT_PRIMARY)
+        self.status_text = ft.Text(
+            "Ready",
+            size=15,
+            weight=ft.FontWeight.W_600,
+            color=TEXT_PRIMARY,
+        )
         self.timer_text = ft.Text("00:00", size=15, color=TEXT_MUTED)
         self.toggle_button = ft.Button(
             content=ft.Text("Start Listening", weight=ft.FontWeight.W_700),
@@ -82,13 +80,6 @@ class SpeechTab:
             style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
             on_click=self._toggle_listening,
         )
-        self.file_button = ft.OutlinedButton(
-            content=ft.Text("Transcribe WAV"),
-            icon=ft.Icons.AUDIO_FILE,
-            height=50,
-            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
-            on_click=lambda _: self.page.run_task(self._pick_and_transcribe_audio),
-        )
         self.output_text = ft.Text(
             "Recognised phrases will appear here.",
             selectable=True,
@@ -97,13 +88,16 @@ class SpeechTab:
         )
         self._view = self._build_view()
 
-    def _register_file_picker(self) -> None:
-        """Attach the file picker service to the current Flet page."""
+    def _register_permission_handler(self) -> None:
+        """Register microphone permission handler with the page."""
 
         try:
-            self.page.register_service(self.file_picker)
+            self.page.overlay.append(self._permission_handler)
         except Exception:
-            pass
+            try:
+                self.page.register_service(self._permission_handler)
+            except Exception:
+                pass
 
     def build(self) -> ft.Control:
         """Return the tab root control."""
@@ -116,22 +110,25 @@ class SpeechTab:
         self.page.update()
 
     def on_hidden(self) -> None:
-        """Stop audio chunk processing when leaving the tab."""
+        """Stop recognition when leaving the tab."""
 
         self.stop()
 
-    def submit_audio_chunk(self, audio_bytes: bytes) -> None:
-        """Receive WAV or PCM bytes from legacy capture integrations."""
-
-        return None
-
     def stop(self) -> None:
-        """Request the speech worker to stop after flushing buffered audio."""
+        """Stop the active STT service and reset controls."""
 
         if self._listening:
             self._listening = False
-            self.status_text.value = "Stopping..."
-            self._engine.stop()
+            if self._stt:
+                self._stt.stop()
+                self._stt = None
+            self.status_text.value = "Ready"
+            self.toggle_button.content = ft.Text(
+                "Start Listening",
+                weight=ft.FontWeight.W_700,
+            )
+            self.toggle_button.icon = ft.Icons.PLAY_ARROW
+            self.toggle_button.bgcolor = PRIMARY_BLUE
             self.page.update()
 
     def _build_view(self) -> ft.Control:
@@ -142,11 +139,6 @@ class SpeechTab:
             spacing=SECTION_GAP,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             controls=[
-                # ft.Text(
-                #     "Convert your speech into text in real-time.",
-                #     size=14,
-                #     color=TEXT_MUTED,
-                # ),
                 ft.Container(
                     height=70,
                     bgcolor=SURFACE,
@@ -164,10 +156,14 @@ class SpeechTab:
                 ft.Row(
                     alignment=ft.MainAxisAlignment.CENTER,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=[self.status_text, ft.Text("-", color=TEXT_MUTED), self.timer_text],
+                    controls=[
+                        self.status_text,
+                        ft.Text("-", color=TEXT_MUTED),
+                        self.timer_text,
+                    ],
                 ),
                 ft.Row(
-                    controls=[self.toggle_button, self.file_button],
+                    controls=[self.toggle_button],
                     wrap=True,
                     spacing=10,
                     alignment=ft.MainAxisAlignment.CENTER,
@@ -215,87 +211,82 @@ class SpeechTab:
         if self._listening:
             self.stop()
             return
+        self.page.run_task(self._start_with_permission_check)
+
+    async def _start_with_permission_check(self) -> None:
+        """Request microphone permission before starting STT."""
+
+        from services.permission_service import ensure_microphone_permission
+
+        granted = await ensure_microphone_permission(self.page, self._permission_handler)
+        if not granted:
+            show_snack(
+                self.page,
+                "Microphone permission is required.",
+                bgcolor="#B91C1C",
+            )
+            return
         self._start_listening()
 
     def _start_listening(self) -> None:
-        """Start recording audio chunks for transcription on Stop."""
+        """Start platform speech recognition."""
 
-        self._events = Queue()
-        self._engine = make_speech_engine(self.page, self.state, self._events.put)
+        from services.asr_service import ASRConfig
+
+        config = ASRConfig(
+            model_size_or_path=self.state.settings.whisper_model_name_or_path(
+                self.state.assets_dir
+            ),
+            language=self.state.settings.speech_language,
+            compute_type="int8",
+            beam_size=1,
+            vad_filter=True,
+            mic_gain=self.state.settings.mic_gain,
+            denoise_enabled=self.state.settings.denoise_enabled,
+            highpass_enabled=self.state.settings.highpass_enabled,
+            highpass_cutoff_hz=self.state.settings.highpass_cutoff_hz,
+            denoise_prop_decrease=self.state.settings.denoise_prop_decrease,
+            denoise_stationary=self.state.settings.denoise_stationary,
+            no_speech_threshold=self.state.settings.no_speech_threshold,
+            vad_silence_ms=self.state.settings.vad_silence_ms,
+            vad_threshold=self.state.settings.vad_threshold,
+        )
+        self._stt = make_stt_service(asr_config=config)
+        if not self._stt.is_available():
+            show_snack(
+                self.page,
+                "Speech recognition is not available on this device.",
+                bgcolor="#B91C1C",
+            )
+            return
+
         self._listening = True
-        self._worker_active = True
         self._started_at = time.monotonic()
-        self.status_text.value = "Recording..."
+        self.status_text.value = "Listening..."
         self.timer_text.value = "00:00"
-        if not self._output_lines:
-            self.output_text.value = "Recording audio. Press Stop to transcribe."
-            self.output_text.color = TEXT_MUTED
-        self.toggle_button.content = ft.Text("Stop Listening", weight=ft.FontWeight.W_700)
+        self.toggle_button.content = ft.Text(
+            "Stop Listening",
+            weight=ft.FontWeight.W_700,
+        )
         self.toggle_button.icon = ft.Icons.STOP
         self.toggle_button.bgcolor = "#1D4ED8"
-        self.toggle_button.disabled = False
-        self._engine.start(self.state.settings.speech_language)
-        if not self._consumer_running:
-            self.page.run_task(self._consume_events)
         if not self._animation_running:
             self.page.run_task(self._animate_listening)
+        self._stt.start(self._on_stt_result)
         self.page.update()
 
-    async def _pick_and_transcribe_audio(self) -> None:
-        """Pick a WAV file and transcribe it with the same byte-only ASR API."""
+    def _on_stt_result(self, result: STTResult) -> None:
+        """Apply one STT result to output or live status."""
 
-        files = await self.file_picker.pick_files(
-            dialog_title="Choose a WAV file",
-            file_type=ft.FilePickerFileType.CUSTOM,
-            allowed_extensions=["wav"],
-            allow_multiple=False,
-            with_data=True,
-        )
-        if not files:
+        if not result.text:
             return
-
-        selected = files[0]
-        audio_bytes = selected.bytes
-        if audio_bytes is None and selected.path:
-            audio_bytes = await asyncio.to_thread(Path(selected.path).read_bytes)
-        if audio_bytes is None:
-            show_snack(self.page, "Could not read selected audio.", bgcolor="#B91C1C")
-            return
-
-        self.file_button.disabled = True
-        self.status_text.value = "Transcribing..."
+        if result.is_final:
+            self._append_result(result.text)
+            self.status_text.value = "Listening..." if self._listening else "Ready"
+        else:
+            preview = result.text[:40] + "..." if len(result.text) > 40 else result.text
+            self.status_text.value = f"Hearing: {preview}"
         self.page.update()
-        try:
-            result = await asyncio.to_thread(self._engine.transcribe_bytes, audio_bytes)
-            text = str(result.get("text", "")).strip()
-            if text:
-                self._append_result(text)
-                self.status_text.value = f"{result.get('duration', 0.0)}s audio"
-            else:
-                self.output_text.value = "No speech detected in selected audio."
-                self.output_text.color = TEXT_MUTED
-                self.status_text.value = "No speech detected"
-        except Exception as exc:
-            self.status_text.value = "Error"
-            show_snack(self.page, f"Audio transcription failed: {exc}", bgcolor="#B91C1C")
-        finally:
-            self.file_button.disabled = False
-            self.page.update()
-
-    async def _consume_events(self) -> None:
-        """Consume ASR worker events on the Flet event loop."""
-
-        self._consumer_running = True
-        try:
-            while self._listening or self._worker_active or not self._events.empty():
-                try:
-                    event = await asyncio.to_thread(self._events.get, True, 0.2)
-                except Empty:
-                    continue
-                self._handle_event(event)
-                self.page.update()
-        finally:
-            self._consumer_running = False
 
     async def _animate_listening(self) -> None:
         """Animate waveform bars and the microphone pulse while listening."""
@@ -327,48 +318,6 @@ class SpeechTab:
             self.mic_circle.scale = 1.0
             self._animation_running = False
             self.page.update()
-
-    def _handle_event(self, event: ASRUiEvent) -> None:
-        """Apply an ASR service event to the UI."""
-
-        kind, message = event
-        if kind == "result":
-            self._append_result(message)
-        elif kind == "error":
-            show_snack(self.page, message, bgcolor="#B91C1C")
-            self.status_text.value = "Error"
-        elif kind == "status":
-            if message == "receiving":
-                self.status_text.value = "Recording..."
-                if not self._output_lines:
-                    self.output_text.value = "Recording audio. Press Stop to transcribe."
-                    self.output_text.color = TEXT_MUTED
-            elif message == "transcribing":
-                self.status_text.value = "Transcribing..."
-                self.toggle_button.disabled = True
-            elif message == "no_input":
-                self.status_text.value = "No audio input connected"
-                if not self._output_lines:
-                    self.output_text.value = (
-                        "No audio chunks received. Use Transcribe WAV or connect "
-                        "a UI audio capture layer."
-                    )
-                    self.output_text.color = TEXT_MUTED
-            elif message == "no_speech":
-                self.status_text.value = "No speech detected"
-                self.toggle_button.disabled = False
-            elif message.startswith("done:"):
-                duration_text = message.split(":", 1)[1]
-                self.status_text.value = f"Transcribed {duration_text}s"
-                self.toggle_button.disabled = False
-            elif message == "stopped":
-                self._listening = False
-                self._worker_active = False
-                self.status_text.value = "Ready"
-                self.toggle_button.content = ft.Text("Start Listening", weight=ft.FontWeight.W_700)
-                self.toggle_button.icon = ft.Icons.PLAY_ARROW
-                self.toggle_button.bgcolor = PRIMARY_BLUE
-                self.toggle_button.disabled = False
 
     def _append_result(self, text: str) -> None:
         """Append recognised speech text to visible output and history."""
